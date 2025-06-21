@@ -15,7 +15,9 @@ class Conexion {
             waitForConnections: true,
             connectTimeout: 10000,
             idleTimeout: 60000,
-            maxIdle: 10
+            maxIdle: 10,
+            timezone: '-05:00',
+            dateStrings: ['TIMESTAMP','DATETIME']
         };
         
         this.pool = mysql.createPool(this.config);

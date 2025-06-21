@@ -9,13 +9,23 @@ const TimeEntryModel = {
   openEntry: async (userId) => {
     try {
       const sql = `
-        INSERT INTO time_entries (user_id, check_in)
-        VALUES (?, UTC_TIMESTAMP())
+        INSERT INTO time_entries (user_id)
+        VALUES (?)
       `;
-      const [result] = await pool.query(sql, [userId]);
-      return result.insertId;
+      const { data: resultHeader } = await pool.query(sql, [userId]);
+      return resultHeader.insertId;
     } catch (err) {
-      throw new Error('Error al abrir entrada: ' + err.message);
+      let code;
+      try {
+        const payload = JSON.parse(err.message);
+        code = payload.error.code;
+      } catch {
+        code = err.code;
+      }
+      if (code === 'ER_DUP_ENTRY') {
+        throw new Error('Ya existe una sesión abierta para este usuario.');
+      }
+      throw new Error('Error al abrir entrada: ' + (err.message || err));
     }
   },
 
@@ -29,13 +39,13 @@ const TimeEntryModel = {
     try {
       const sql = `
         UPDATE time_entries
-           SET check_out = UTC_TIMESTAMP(),
+           SET check_out = CURRENT_TIMESTAMP(3),
                summary   = ?,
                status    = 'PENDING'
          WHERE user_id  = ?
            AND check_out IS NULL
       `;
-      const [result] = await pool.query(sql, [summary, userId]);
+      const { data: result } = await pool.query(sql, [summary, userId]);
       return result.affectedRows > 0;
     } catch (err) {
       throw new Error('Error al cerrar entrada: ' + err.message);
@@ -55,8 +65,8 @@ const TimeEntryModel = {
            AND check_out IS NULL
          LIMIT 1
       `;
-      const [rows] = await pool.query(sql, [userId]);
-      return rows.length > 0;
+      const { data } = await pool.query(sql, [userId]);
+      return data.length > 0;
     } catch (err) {
       throw new Error('Error comprobando entrada abierta: ' + err.message);
     }
@@ -82,8 +92,8 @@ const TimeEntryModel = {
         params.push(from, to);
       }
 
-      sql += ' ORDER BY check_in DESC';
-      const [rows] = await pool.query(sql, params);
+      sql += ' ORDER BY check_in ASC';
+      const { data: rows } = await pool.query(sql, params);
       return rows;
     } catch (err) {
       throw new Error('Error al obtener entradas: ' + err.message);
@@ -107,7 +117,7 @@ const TimeEntryModel = {
            AND check_in >= ?
            AND check_out <= ?
       `;
-      const [rows] = await pool.query(sql, [userId, start, end]);
+      const { data: rows } = await pool.query(sql, [userId, start, end]);
       return parseFloat(rows[0].hours);
     } catch (err) {
       throw new Error('Error al calcular estadísticas: ' + err.message);
@@ -127,7 +137,7 @@ const TimeEntryModel = {
          WHERE te.status = 'PENDING'
          ORDER BY te.check_in DESC
       `;
-      const [rows] = await pool.query(sql);
+      const { data: rows } = await pool.query(sql);
       return rows;
     } catch (err) {
       throw new Error('Error al obtener pendientes: ' + err.message);
@@ -151,7 +161,7 @@ const TimeEntryModel = {
          WHERE id = ?
            AND status = 'PENDING'
       `;
-      const [result] = await pool.query(sql, [newStatus, reviewerId, entryId]);
+      const { data: result } = await pool.query(sql, [newStatus, reviewerId, entryId]);
       return result.affectedRows > 0;
     } catch (err) {
       throw new Error('Error al revisar entrada: ' + err.message);

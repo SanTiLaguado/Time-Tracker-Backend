@@ -11,17 +11,23 @@ const TimeEntryController = {
     try {
       const userId = req.user.id;
 
-      // 1) Validar que NO haya una entrada abierta
+      // Validar que no haya una entrada abierta
       const hasOpen = await TimeEntryModel.hasOpenEntry(userId);
+      
       if (hasOpen) {
         return res.status(400).json({ message: 'Ya existe una sesión abierta.' });
       }
 
-      // 2) Abrir nueva entrada
+      // Intentar abrir nueva entrada
       const entryId = await TimeEntryModel.openEntry(userId);
+
       return res.status(201).json({ message: 'Check-in registrado', entryId });
     } catch (err) {
       console.error('Check-in error:', err);
+
+      if (err.message.includes('Ya existe una sesión abierta')) {
+        return res.status(400).json({ message: err.message });
+      }
       return res.status(500).json({ message: 'Error en el servidor' });
     }
   },

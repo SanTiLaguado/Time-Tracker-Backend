@@ -3,75 +3,81 @@ const pool = require('../config/db');
 
 const UserModel = {
   /**
-   * Obtiene un usuario activo por email, con sus campos de control de intentos.
+   * Fetches an active user by email, including failed-attempts data.
+   * Returns null if not found.
    */
   getUserByEmail: async (email) => {
     try {
-      const [resultSets] = await pool.query('CALL ObtenerUsuarioPorEmail(?)', [email]);
-      // resultSets[0] contiene la primera fila del SELECT
-      return resultSets[0] || null;
+      const { data: rows } = await pool.query('CALL GetUserByEmail(?)', [email]);
+      // rows is an array of result sets; first set is the SELECT result
+      return rows[0] ? rows[0][0] : null;
     } catch (error) {
-      throw new Error('Error al obtener usuario: ' + error.message);
+      throw new Error('Error fetching user: ' + error.message);
     }
   },
 
   /**
-   * Incrementa el contador de intentos fallidos y registra la fecha del último intento.
+   * Increment failed login attempts and set last_failed_at.
    */
   incrementFailedAttempts: async (email) => {
     try {
       await pool.query(
-        'UPDATE usuario SET failed_attempts = failed_attempts + 1, last_failed_at = UTC_TIMESTAMP() WHERE email = ?',
+        'UPDATE users SET failed_attempts = failed_attempts + 1, last_failed_at = UTC_TIMESTAMP() WHERE email = ?',
         [email]
       );
     } catch (error) {
-      throw new Error('Error al incrementar intentos fallidos: ' + error.message);
+      throw new Error('Error incrementing failed attempts: ' + error.message);
     }
   },
 
   /**
-   * Reinicia el contador de intentos fallidos tras un login exitoso.
+   * Reset failed login attempts after successful login.
    */
   resetFailedAttempts: async (email) => {
     try {
       await pool.query(
-        'UPDATE usuario SET failed_attempts = 0, last_failed_at = NULL WHERE email = ?',
+        'UPDATE users SET failed_attempts = 0, last_failed_at = NULL WHERE email = ?',
         [email]
       );
     } catch (error) {
-      throw new Error('Error al reiniciar intentos fallidos: ' + error.message);
+      throw new Error('Error resetting failed attempts: ' + error.message);
     }
   },
 
   /**
-   * Actualiza la fecha del último login del usuario.
+   * Update last_login_at timestamp.
    */
   updateLastLogin: async (email) => {
     try {
-      await pool.query('CALL ActualizarUltimoLogin(?)', [email]);
+      await pool.query('CALL UpdateLastLogin(?)', [email]);
       return true;
     } catch (error) {
-      console.error('Error al actualizar último login:', error);
+      console.error('Error updating last login:', error);
       return false;
     }
   },
 
   /**
-   * Crea un nuevo usuario usando el procedimiento almacenado CrearUsuario.
-   * Devuelve { id, nombre, email, role }.
+   * Create a new user via stored procedure.
+   * Returns { id, name, email, role }.
    */
-  createUser: async ({ nombre, email, password, role = 'user' }) => {
+  createUser: async ({ name, email, password, role = 'user' }) => {
     try {
-      const [resultSets] = await pool.query(
-        'CALL CrearUsuario(?, ?, ?, ?)',
-        [nombre, email, password, role]
+      const { data: rows } = await pool.query(
+        'CALL CreateUser(?, ?, ?, ?)',
+        [name, email, password, role]
       );
-      return resultSets[0];
+      // rows[0] is the SELECT result from the procedure
+      return rows[0][0];
     } catch (error) {
-      if (error.message.includes('ya está registrado')) {
-        throw new Error('El email ya está registrado');
-      }
-      throw new Error('Error al crear usuario: ' + error.message);
+      let msg = error.message;
+      try {
+        const payload = JSON.parse(error.message);
+        if (payload.error?.message.includes('Email already registered')) {
+          msg = 'Email already registered';
+        }
+      } catch {}
+      throw new Error('Error creating user: ' + msg);
     }
   }
 };
